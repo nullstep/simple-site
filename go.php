@@ -25,266 +25,50 @@ define("_HASH", hash("sha256", _DOMAIN . _SALT));
 define("_USEDB", FALSE);
 define("_CACHE", FALSE);
 
-define("_NAV", '[{"name":"/"},{"name":"/page-one"},{"name":"/page-two"},{"name":"-hidden-page"},{"name":"#parent-menu","children":[{"name":"/child-page-one"},{"name":"/child-page-two"}]},{"name":"/page-three"},{"name":"/page-four"}]');
+define("_NAV", [
+	[
+		"name" => "/"
+	],
+	[
+		"name" => "/page-one"
+	],
+	[
+		"name" => "/page-two"
+	],
+	[
+		"name" => "/-hidden-page"
+	],
+	[
+		"name" => "/#parent-menu",
+		"children" => [
+			[
+				"name" => "/child-page-one"
+			],
+			[
+				"name" => "/child-page-two"
+			]
+		]
+	],
+	[
+		"name" => "/page-three"
+	],
+	[
+		"name" => "/page-four"
+	]
+]);
+
+define("_DATA", [
+]);
 
 // vars
 $GLOBALS["code"] = "200";
+
 $fields = [
 	"name",
 	"email_address",
 	"phone_number",
 	"text"
 ];
-
-// db class
-class D {
-	public static $db;
-
-	public static function setup($name = "./../database.db") {
-		self::$db = new PDO("sqlite:{$name}");
-	}
-
-	public static function nuke($name) {
-		if (file_exists($name)) {
-			unlink($name);
-			return TRUE;
-		}
-		else {
-			return FALSE;
-		}
-	}
-
-	public static function drop($table = "data") {
-		$sql = "drop table if exists {$table};";
-		return self::$db->exec($sql);
-	}
-
-	public static function dispense($table = "data") {
-		$sql = "create table if not exists {$table} (id int primary key);";
-		self::$db->exec($sql);
-		$obj = new stdClass();
-		$obj->_table = $table;
-
-		return $obj;
-	}
-
-	public static function store($obj) {
-		$table = $obj->_table;
-		$update = FALSE;
-
-		if (!$table) {
-			return FALSE;
-		}
-
-		if (!_FROZEN) {
-			$sql = "select * from ({$table}) limit 1;";
-			$ret = self::$db->query($sql);
-			$cols = $ret->fetchAll(PDO::FETCH_ASSOC);
-
-			foreach ($obj as $col => $val) {
-				if ($col != "_table") {
-					if (!in_array($col, $cols)) {
-						$new[] = [$col => $val];
-					}
-				}
-			}
-
-			if (count($new) > 0) {
-
-				foreach ($new as $field) {
-					$sql = "alter table {$table}";
-					$type = NULL;
-					$col = array_keys($field)[0];
-					$val = $field[$col];
-
-					switch (gettype($val)) {
-						case "integer":
-							$type = "integer";
-							break;
-						case "double":
-							$type = "real";
-							break;
-						case "string":
-							$type = "text";
-							break;
-					}
-
-					if ($type) {
-						$sql .= " add column {$col} {$type};";
-						$ret = self::$db->exec($sql);
-					}
-				}
-			}
-		}
-
-		if (isset($obj->id)) {
-			// update
-			$update = TRUE;
-			$id = $obj->id;
-			$sql = "update {$table} set ";
-
-			foreach ($obj as $col => $val) {
-				if ($col == "rowid") {
-					$val = $id;
-				}
-
-				if ($col != "_table" && $col != "id") {
-					$sql .= " {$col} = '{$val}',";
-				}
-			}
-			$sql = rtrim($sql, ",") . " where id = {$id};";
-			$ret = self::$db->exec($sql);
-		}
-		else {
-			// insert
-			$sql = "insert into {$table} (";
-
-			foreach ($obj as $col => $val) {
-				if ($col != "_table") {
-					$sql .= "{$col},";
-				}
-			}
-			$sql = rtrim($sql, ",") . ") values (";
-
-			foreach ($obj as $col => $val) {
-				if ($col != "_table") {
-					switch (gettype($val)) {
-						case "integer":
-							$sql .= "{$val},";
-							break;
-						case "double":
-							$sql .= "{$val},";
-							break;
-						case "string":
-							$sql .= "'{$val}',";
-							break;
-					}
-				}
-			}
-
-			$sql = rtrim($sql, ",") . ");";
-			$ret = self::$db->exec($sql);
-		}
-
-		if (!$ret) {
-			return self::$db->errorInfo();
-		}
-		else {
-			if ($update) {
-				return TRUE;
-			}
-			else {
-				$id = self::$db->lastInsertId();
-				$sql = "update {$table} set id = {$id} where rowid = {$id}";
-				$ret = self::$db->exec($sql);
-
-				if (!$ret) {
-					return self::$db->errorInfo();
-				}
-				else {
-					return $id;
-				}
-			}
-		}
-	}
-
-	public static function find($table, $query, $params = [], $num = 0) {
-		$query = strtr($query, $params);
-		$sql = "select rowid, * from {$table} where {$query}" . (($num > 0) ? " limit {$num};" : ";");
-		$ret = self::$db->query($sql);
-
-		if (!$ret) {
-			return self::$db->errorInfo();
-		}
-		else {
-			$arr = [];
-			$rows = $ret->fetchAll(PDO::FETCH_ASSOC);
-
-			foreach ($rows as $row) {
-				$obj = new stdClass();
-
-				foreach ($row as $col => $val) {
-					$obj->$col = $val;
-				}
-
-				$obj->_table = $table;
-				$arr[] = $obj;
-			}
-
-			return $arr;
-		}
-	}
-
-	public static function one($table, $query, $params = []) {
-		$query = strtr($query, $params);
-		$sql = "select rowid, * from {$table} where {$query} limit 1;";
-		$ret = self::$db->query($sql);
-
-		if (!$ret) {
-			return self::$db->errorInfo();
-		}
-		else {
-			$rows = $ret->fetchAll(PDO::FETCH_ASSOC);
-			$obj = new stdClass();
-
-			foreach ($rows as $row) {
-
-				foreach ($row as $col => $val) {
-					$obj->$col = $val;
-				}
-
-				$obj->_table = $table;
-			}
-
-			return $obj;
-		}
-	}
-
-	public static function load($table, $id) {
-		$sql = "select rowid, * from {$table} where rowid = {$id} or id = {$id} limit 1;";
-		$ret = self::$db->query($sql);
-
-		if (!$ret) {
-			return self::$db->errorInfo();
-		}
-		else {
-			$arr = [];
-			$rows = $ret->fetchAll(PDO::FETCH_ASSOC);
-
-			foreach ($rows as $row) {
-				$obj = new stdClass();
-
-				foreach ($row as $col => $val) {
-					$obj->$col = $val;
-				}
-
-				$obj->_table = $table;
-			}
-
-			return $obj;
-		}
-	}
-
-
-	public static function trash($obj) {
-		$table = $obj->_table;
-
-		if (!$table) {
-			return FALSE;
-		}
-
-		$id = $obj->oid;
-		$sql = "delete from {$table} where rowid = {$id};";
-		$ret = self::$db->exec($sql);
-
-		return (!$ret) ? self::$db->errorInfo() : TRUE;
-	}
-}
-
-// create db if required
-if (_USEDB) {
-	D::setup();
-}
 
 // return mime type
 function _mime($type) {
@@ -478,7 +262,6 @@ function _theme($params, $html = "") {
 				}
 				case "nav": {
 					$menu = "";
-					$items = json_decode(_NAV, TRUE);
 
 					$file = "{$root}/html/_nav.html";
 					$nav = (file_exists($file)) ? file_get_contents($file) : "";
@@ -490,7 +273,7 @@ function _theme($params, $html = "") {
 					$n2c = (file_exists($file)) ? file_get_contents($file) : "";
 					$first1 = TRUE;
 
-					foreach ($items as $item) {
+					foreach (_NAV as $item) {
 						$type_1 = $item["name"][0];
 
 						if ($item["name"] == '/') {
@@ -562,24 +345,6 @@ function _theme($params, $html = "") {
 
 					break;
 				}
-				case "data": {
-					$content = D::one(
-						"content",
-						"url = ':u' and tag = ':t'",
-						[
-							":u" => $params["url"],
-							":t" => $cmd[1]
-						]
-					);
-					$data = (is_array($content)) ? "NO DATA" : $content->data;
-					$html = str_replace(
-						$tags[$i],
-						$data,
-						$html
-					);
-
-					break;
-				}
 				case "file": {
 					$file = "{$root}/html/{$cmd[1]}.html";
 					$content = _load($file);
@@ -597,13 +362,11 @@ function _theme($params, $html = "") {
 				}
 				case "loop": {
 					$loop = "";
-					$data = "[]";
-					$items = json_decode($data, TRUE);
 					$file = "{$root}/html/{$cmd[3]}.html";
 					$block = _load($file);
 					$first = TRUE;
 
-					foreach ($items as $content) {
+					foreach (_DATA as $content) {
 						$nl = (!$first) ? "\n" : "";
 						if ($cmd[1] == 'yes') {
 							$content = strip_tags($content);
